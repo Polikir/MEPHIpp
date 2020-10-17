@@ -1,0 +1,167 @@
+#Для GoogleCollab
+# Загрузка необходимых библиотек и модулей
+import zipfile # Библиотека для работы с zip архивами
+import os      # Библиотека для работы с фаловой системой 
+import time    # Библиотека для работы со временем
+import cv2
+import PIL
+from PIL import Image
+import torch
+import random
+import numpy as np
+
+from google.colab import drive # Модуль для работы с Google Disk
+
+# Подключаем гугл диск
+drive.mount('/content/drive')
+
+# Прописываем путь к файлу с архивом
+zip_file = '/content/drive/My Drive/.../BigR.zip'  
+
+# Распаковываем архив
+z = zipfile.ZipFile(zip_file, 'r')
+z.extractall()
+
+# Просмотр результата разархивации
+print(os.listdir())
+
+
+random.seed(0)
+np.random.seed(0)
+torch.manual_seed(0)
+torch.cuda.manual_seed(0)
+torch.backends.cudnn.deterministic = True
+
+
+#Убираем четвертый канал и переводим из БГР в Серый(1 канал)
+def make_background(image):
+    file_without_extension = image.split('.')[0]
+    image = cv2.imread(image, cv2.IMREAD_UNCHANGED)
+    trans_mask = image[:, :, 3] == 0
+    image[trans_mask] = [255, 255, 255, 255]
+    new_img = cv2.cvtColor(image, cv2.COLOR_BGRA2GRAY)
+    return new_img
+import PIL
+from PIL import Image
+#Переводим в нужный(28*28)размер
+def resize(img,basewidth):
+    #img = Image.open(image)
+    img = Image.fromarray(img)
+    wpercent = (basewidth / float(img.size[0]))
+    hsize = int((float(img.size[1]) * float(wpercent)))
+    img = img.resize((basewidth, hsize), PIL.Image.ANTIALIAS) 
+    arr = np.asarray(img, dtype='uint8')
+    return torch.Tensor(arr)
+
+X_train = torch.Tensor([])
+X_test = torch.Tensor([])
+
+for i in range(33):
+    for j in range(1,321):
+        X_train = torch.cat((X_train, torch.Tensor(resize(make_background(f'{i} ({j}).png'),28))))
+
+for i in range(33):
+    for j in range(321,401):
+        X_test = torch.cat((X_test, torch.Tensor(resize(make_background(f'{i} ({j}).png'),28))))
+y_train = torch.Tensor([])
+y_test = torch.Tensor([])
+for i in range(33):
+    for j in range(1,321):
+        y_train = torch.cat((y_train,torch.Tensor([i])))
+for i in range(33):
+    for j in range(321,401):
+        y_test = torch.cat((y_test, torch.Tensor([i])))
+X_train = X_train.reshape(10560,28,28)
+X_test = X_test.reshape(2640,28,28)
+X_train = X_train.unsqueeze(1).float()
+X_test = X_test.unsqueeze(1).float()
+y_train = y_train.int()
+y_test = y_test.int()
+
+class LeNet5(torch.nn.Module):
+    def __init__(self):
+        super(LeNet5, self).__init__()
+        
+        self.conv1 = torch.nn.Conv2d(
+            in_channels=1, out_channels=6, kernel_size=5, padding=2)
+        self.act1  = torch.nn.ELU()
+        self.pool1 = torch.nn.MaxPool2d(kernel_size=2, stride=2)
+       
+        self.conv2 = torch.nn.Conv2d(
+            in_channels=6, out_channels=16, kernel_size=5, padding=0)
+        self.act2  = torch.nn.ELU()
+        self.pool2 = torch.nn.MaxPool2d(kernel_size=2, stride=2)
+        
+        self.fc1   = torch.nn.Linear(5 * 5 * 16, 120)
+        self.act3  = torch.nn.ELU()
+        
+        self.fc2   = torch.nn.Linear(120, 84)
+        self.act4  = torch.nn.ELU()
+        
+        self.fc3   = torch.nn.Linear(84, 33)
+    
+    def forward(self, x):
+        
+        x = self.conv1(x)
+        x = self.act1(x)
+        x = self.pool1(x)
+        
+        x = self.conv2(x)
+        x = self.act2(x)
+        x = self.pool2(x)
+        
+        x = x.view(x.size(0), x.size(1) * x.size(2) * x.size(3))
+
+        x = self.fc1(x)
+        x = self.act3(x)
+        x = self.fc2(x)
+        x = self.act4(x)
+        x = self.fc3(x)
+        
+        return x
+    
+lenet5 = LeNet5()
+#For GC-
+device = torch.device('cuda:0' if torch.cuda.is_available() else 'cpu')
+lenet5 = lenet5.to(device)
+#-
+loss = torch.nn.CrossEntropyLoss()
+optimizer = torch.optim.Adam(lenet5.parameters(), lr=1.0e-3)
+
+batch_size = 30
+
+test_accuracy_history = []
+test_loss_history = []
+
+X_test = X_test.to(device)
+y_test = y_test.to(device)
+
+for epoch in range(1000):
+    order = np.random.permutation(len(X_train))
+    for start_index in range(0, len(X_train), batch_size):
+        optimizer.zero_grad()
+        
+        batch_indexes = order[start_index:start_index+batch_size]
+        
+
+        X_batch = X_train[batch_indexes].to(device)
+        y_batch = y_train[batch_indexes].to(device)
+
+
+        
+        
+        preds = lenet5.forward(X_batch) 
+        
+        y_batch = y_batch.type(torch.LongTensor)
+        loss_value = loss(preds, y_batch)
+        loss_value.backward()
+        
+        optimizer.step()
+        
+    test_preds = lenet5.forward(X_test)
+    test_loss_history.append((test_preds, y_test).data.cpu())
+    .type(torch.LongTensor)
+    accuracy = (test_preds.argmax(dim=1) == y_test).float().mean().data.cpu()
+    test_accuracy_history.append(accuracy)
+    
+    print(accuracy)
