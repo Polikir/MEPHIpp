@@ -1,0 +1,169 @@
+#csv в list с марекерами и именами файлов
+import csv
+ 
+results = []
+with open('letters.csv') as File:
+    reader = csv.DictReader(File)
+    for row in reader:
+        results.append(row)
+with open('letters2.csv') as File:
+    reader = csv.DictReader(File)
+    for row in reader:
+        results.append(row)
+with open('letters3.csv') as File:
+    reader = csv.DictReader(File)
+    for row in reader:
+        results.append(row)
+import h5py
+import numpy as np
+with h5py.File('LetterColorImages.h5', 'r') as f:
+    for key in f.keys():
+        print(key)
+    all1 = torch.Tensor(f['images'])
+with h5py.File('LetterColorImages2.h5', 'r') as f:
+    for key in f.keys():
+        print(key)
+    all2 = torch.Tensor(f['images'])
+with h5py.File('LetterColorImages3.h5', 'r') as f:
+    for key in f.keys():
+        print(key)
+    all3 = torch.Tensor(f['images'])
+all = torch.cat((all1,all2,all3))
+print(all[0].shape)
+convert_f_n = dict({})
+t = 0
+for x in range(1,34):
+    for i in range(1,51):
+        if x<10:
+            convert_f_n['0'+str(x)+'_'+str(i)+'.png'] = t
+            t+=1
+        else:
+            convert_f_n[str(x)+'_'+str(i)+'.png'] = t
+            t+=1
+print(convert_f_n['01_12.png'])
+for x in range(1,34):
+    for i in range(51,231):
+        if x<10:
+            convert_f_n['0'+str(x)+'_'+str(i)+'.png'] = t
+            t+=1
+        else:
+            convert_f_n[str(x)+'_'+str(i)+'.png'] = t
+            t+=1
+print(convert_f_n['04_120.png'])
+for x in range(1,34):
+    for i in range(231,431):
+        if x<10:
+            convert_f_n['0'+str(x)+'_'+str(i)+'.png'] = t
+            t+=1
+        else:
+            convert_f_n[str(x)+'_'+str(i)+'.png'] = t
+            t+=1
+print(convert_f_n['14_270.png'])
+rl = 'абвгдеёжзийклмнопрстуфхцчшщъыьэюя'
+conv_rl = dict({})
+for x in range(1,34):
+    conv_rl[x] = rl[x-1]
+import torch
+import random
+import numpy as np
+
+random.seed(0)
+np.random.seed(0)
+torch.manual_seed(0)
+torch.cuda.manual_seed(0)
+torch.backends.cudnn.deterministic = True
+
+X_test = tuple([all[i] for i in range(0,len(all),5)])
+y_test = [int(results[i]['label']) for i in range(0,len(all),5)]
+X_train = tuple([all[i] for i in range(1,len(all),5)] + [all[i] for i in range(2,len(all),5)] + [all[i] for i in range(3,len(all),5)] + [all[i] for i in range(4,len(all),5)])
+y_train = [int(results[i]['label']) for i in range(1,len(all),5)] + [int(results[i]['label']) for i in range(2,len(all),5)] + [int(results[i]['label']) for i in range(3,len(all),5)] + [int(results[i]['label']) for i in range(4,len(all),5)]
+X_train = X_train.reshape(11352,3,32,32)
+X_test = X_test.reshape(2838,3,32,32)
+y_test = torch.Tensor(y_test)
+y_train = torch.Tensor(y_train)
+y_test = y_test.int()
+y_train = y_train.int()
+y_test -= 1
+y_train -=1
+class LeNet5(torch.nn.Module):
+    def __init__(self):
+        super(LeNet5, self).__init__()
+        
+        self.conv1 = torch.nn.Conv2d(
+            in_channels=3, out_channels=6, kernel_size=5, padding=0)
+        self.act1  = torch.nn.ELU()
+        self.pool1 = torch.nn.MaxPool2d(kernel_size=2, stride=2)
+       
+        self.conv2 = torch.nn.Conv2d(
+            in_channels=6, out_channels=16, kernel_size=5, padding=0)
+        self.act2  = torch.nn.ELU()
+        self.pool2 = torch.nn.MaxPool2d(kernel_size=2, stride=2)
+        
+        self.fc1   = torch.nn.Linear(5 * 5 * 16, 120)
+        self.act3  = torch.nn.ELU()
+        
+        self.fc2   = torch.nn.Linear(120, 84)
+        self.act4  = torch.nn.ELU()
+        
+        self.fc3   = torch.nn.Linear(84, 33)
+    
+    def forward(self, x):
+        
+        x = self.conv1(x)
+        x = self.act1(x)
+        x = self.pool1(x)
+        
+        x = self.conv2(x)
+        x = self.act2(x)
+        x = self.pool2(x)
+        
+        x = x.view(x.size(0), x.size(1) * x.size(2) * x.size(3))
+
+        x = self.fc1(x)
+        x = self.act3(x)
+        x = self.fc2(x)
+        x = self.act4(x)
+        x = self.fc3(x)
+        
+        return x
+    
+lenet5 = LeNet5()
+loss = torch.nn.CrossEntropyLoss()
+optimizer = torch.optim.Adam(lenet5.parameters(), lr=5.0e-4)
+batch_size = 100
+
+test_accuracy_history = []
+test_loss_history = []
+X_test = X_test.to(device)
+y_test = y_test.to(device)
+
+for epoch in range(2500):
+    order = np.random.permutation(len(X_train))
+    for start_index in range(0, len(X_train), batch_size):
+        optimizer.zero_grad()
+        
+        batch_indexes = order[start_index:start_index+batch_size]
+        
+
+        X_batch = X_train[batch_indexes].to(device)
+        y_batch = y_train[batch_indexes].to(device)
+
+
+        
+        
+        preds = lenet5.forward(X_batch) 
+        
+        y_batch = y_batch.type(torch.LongTensor)
+        loss_value = loss(preds, y_batch)
+        loss_value.backward()
+        
+        optimizer.step()
+        
+    test_preds = lenet5.forward(X_test)
+    #test_loss_history.append(loss(test_preds, y_test).data.cpu())
+    #.type(torch.LongTensor)
+    accuracy = (test_preds.argmax(dim=1) == y_test).float().mean().data.cpu()
+    test_accuracy_history.append(accuracy)
+    
+    print(accuracy)
+    
